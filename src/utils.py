@@ -1,3 +1,4 @@
+# src/utils.py
 from rich.table import Table
 from rich.console import Console
 from rich import box
@@ -49,4 +50,3 @@ def pretty_table(results):
         )
 
     console.print(table)
-

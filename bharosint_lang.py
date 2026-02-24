@@ -1,31 +1,70 @@
+# bharosint_lang.py
+
+from src.translator import translate_query
 from src.search import duckduckgo_search
-from src.translator import detect_language, translate_query, translate_snippet
 
-def regional_search(query, max_results=5):
-    detected_lang = detect_language(query)
+LANGUAGES = {
+    "English": "en",
+    "Hindi": "hi",
+    "Tamil": "ta",
+    "Telugu": "te",
+    "Malayalam": "ml",
+    "Bengali": "bn"
+}
 
-    if detected_lang == "en":
-        # Translate English keywords into major Indian languages
-        indian_langs = ["hi", "ta", "te", "ml", "bn", "gu"]
-        queries = [query] + [translate_query(query, lang) for lang in indian_langs]
-    else:
-        # Translate regional queries to English for scraping
-        queries = [query, translate_query(query, "en")]
-
+def regional_search(query):
+    """Perform multilingual search and print results to console."""
+    print(f"\n[+] Searching multiple languages for: {query}\n")
     all_results = []
-    for q in queries:
-        results = duckduckgo_search(q, max_results=max_results)
-        for r in results:
-            # Translate non-English titles to English
-            r["title"] = translate_snippet(r["title"], "en")
-            all_results.append(r)
+    try:
+        for lang_name, lang_code in LANGUAGES.items():
+            translated = translate_query(query, lang_code)
+            print(f"[>] {lang_name:9} ({lang_code}) → {translated}")
+            results = duckduckgo_search(translated, limit=8, lang=lang_code)
+            for r in results:
+                r["lang"] = lang_name
+                all_results.append(r)
 
-    # Deduplicate
-    unique_results = []
-    seen_links = set()
+        seen = set()
+        unique = []
+        for r in all_results:
+            link = r.get("link") or r.get("href") or ""
+            if link and link not in seen:
+                seen.add(link)
+                unique.append(r)
+
+        print(f"\n[+] Found {len(unique)} multilingual search results:\n")
+        for i, r in enumerate(unique, 1):
+            print(f"{i}. [{r['lang']}]")
+            print(f"   Title   : {r.get('title','')}")
+            print(f"   Snippet : {r.get('snippet','')}")
+            print(f"   URL     : {r.get('link','')}\n")
+
+    except Exception as e:
+        print(f"[!] Regional search failed: {e}\n")
+
+def regional_search_results(query):
+    """Return a list of result dicts for NLP processing."""
+    all_results = []
+    for lang_name, lang_code in LANGUAGES.items():
+        try:
+            translated = translate_query(query, lang_code)
+            results = duckduckgo_search(translated, limit=8, lang=lang_code)
+            for r in results:
+                r["lang"] = lang_name
+                r.setdefault("title", "")
+                r.setdefault("snippet", "")
+                r.setdefault("link", "")
+                all_results.append(r)
+        except Exception:
+            continue
+
+    seen = set()
+    unique = []
     for r in all_results:
-        if r["link"] not in seen_links:
-            seen_links.add(r["link"])
-            unique_results.append(r)
+        link = r.get("link") or r.get("href") or ""
+        if link and link not in seen:
+            seen.add(link)
+            unique.append(r)
 
-    return unique_results
+    return unique

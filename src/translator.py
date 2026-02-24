@@ -1,60 +1,64 @@
 # src/translator.py
-"""
-Translator utilities using deep-translator as a stable fallback.
-Provides:
-- detect_language(text) -> returns best-guess lang code (uses langdetect)
-- translate_query(text, target_lang) -> translates into target language
-- translate_snippet(text, target_lang='en') -> translates snippet to English by default
-"""
-
-from deep_translator import GoogleTranslator, exceptions as dt_exceptions
+from deep_translator import GoogleTranslator
 from langdetect import detect, DetectorFactory, LangDetectException
+from typing import Optional
+import time
 
-DetectorFactory.seed = 0  # deterministic langdetect results
+DetectorFactory.seed = 0
 
+LANG_ALIAS = {
+    "english": "en", "en": "en",
+    "hindi": "hi", "hi": "hi",
+    "tamil": "ta", "ta": "ta",
+    "telugu": "te", "te": "te",
+    "malayalam": "ml", "ml": "ml",
+    "bengali": "bn", "bn": "bn",
+}
 
-def detect_language(text: str) -> (str, float):
-    """
-    Return (lang_code, confidence). If detection fails, returns ('unknown', 0.0).
-    """
+def detect_language(text: str) -> str:
+    if not text or not text.strip():
+        return "unknown"
     try:
-        if not text or not text.strip():
-            return "unknown", 0.0
         code = detect(text)
-        # langdetect doesn't provide numeric confidence, return 1.0 as placeholder
-        return code, 1.0
+        return code
     except LangDetectException:
-        return "unknown", 0.0
+        return "unknown"
     except Exception:
-        return "unknown", 0.0
+        return "unknown"
 
+def _normalize_lang_code(code: Optional[str]) -> str:
+    if not code:
+        return "en"
+    code = code.strip().lower()
+    return LANG_ALIAS.get(code, code[:2]) 
 
-def translate_text(text: str, target_lang: str = "en") -> str:
-    """
-    Translate text to target_lang using deep-translator GoogleTranslator (best-effort).
-    If translation fails, returns the original text.
-    Note: target_lang should be an ISO code like 'en','hi','ta','bn' etc.
-    """
-    if not text:
-        return ""
+def translate_query(text: str, target_lang: str = "en") -> str:
+    if not text or not text.strip():
+        return text
+
+    target = _normalize_lang_code(target_lang)
+
     try:
-        # GoogleTranslator uses 'auto' detection for source by default
-        translated = GoogleTranslator(source="auto", target=target_lang).translate(text)
-        return translated
-    except dt_exceptions.NotValidPayload as e:
-        # Bad input, return original
-        return text
-    except dt_exceptions.ServerException:
-        return text
+        src_lang = detect_language(text)
     except Exception:
-        # Last-resort: return original
+        src_lang = "unknown"
+
+    if src_lang == target:
         return text
 
+    attempts = 2
+    for attempt in range(attempts):
+        try:
+            translated = GoogleTranslator(source="auto", target=target).translate(text)
+            if translated and isinstance(translated, str):
+                if translated.strip() == text.strip():
+                    return text
+                return translated
+        except Exception:
+            time.sleep(0.3)
+            continue
 
-# Convenience wrappers used by the rest of the code:
-def translate_query(query: str, target_lang: str) -> str:
-    return translate_text(query, target_lang)
+    return text
 
-
-def translate_snippet(snippet: str, target_lang: str = "en") -> str:
-    return translate_text(snippet, target_lang)
+def translate_snippet(text: str, target: str = "en") -> str:
+    return translate_query(text, target)

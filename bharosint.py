@@ -1,10 +1,16 @@
-from colorama import Fore, Style, init
-from bharosint_lang import regional_search
+# bharosint.py
 
-init(autoreset=True)
+from bharosint_lang import regional_search, regional_search_results
+from src.social_scraper import collect_social_data
+from src.nlp_engine import analyze_corpus
+from src.formatter import display_search_results, display_social_results, display_nlp_analysis
 
-def banner():
-    print(Fore.CYAN + Style.BRIGHT + r"""
+# -------------------------------
+# Main Menu
+# -------------------------------
+
+def main_menu():
+    print(r"""
 ______ _   _   ___  ______ _____ _____ _____ _   _ _____ 
 | ___ \ | | | / _ \ | ___ \  _  /  ___|_   _| \ | |_   _|
 | |_/ / |_| |/ /_\ \| |_/ / | | \ `--.  | | |  \| | | |  
@@ -12,35 +18,58 @@ ______ _   _   ___  ______ _____ _____ _____ _   _ _____
 | |_/ / | | || | | || |\ \ \_/ /\__/ /_| |_| |\  | | |  
 \____/\_| |_/\_| |_/\_| \_|\___/\____/ \___/\_| \_/ \_/  
 
-    🗡️  Open Source OSINT Framework (BHAROSINT v1) 🗡️
-""")
+    🗡️  Open Source OSINT Framework (BHAROSINT v2) 🗡️
+    """)
 
-def main_menu():
     while True:
-        print(Fore.MAGENTA + "\n[ MAIN MENU ]")
-        print(Fore.YELLOW + "1. Web Search (Regional + English)")
-        print(Fore.YELLOW + "2. Exit")
-
-        choice = input(Fore.CYAN + "\nEnter your choice: ")
+        print("""
+[ MAIN MENU ]
+1. Web Search (Regional + English)
+2. Social Media Intelligence (Multilingual)
+3. Run Combined NLP on last results (corpus-level)
+4. Exit
+""")
+        choice = input("Enter your choice: ")
 
         if choice == "1":
-            query = input(Fore.GREEN + "Enter search query: ")
-            print(Fore.CYAN + f"\n[+] Searching multiple languages for: {query}\n")
-            results = regional_search(query, max_results=5)
-
-            if results:
-                print(Fore.GREEN + f"[+] Found {len(results)} unique results:\n")
-                for i, r in enumerate(results, 1):
-                    print(Fore.YELLOW + f"{i}. {r['title']}")
-                    print(Fore.CYAN + f"   {r['link']}\n")
-            else:
-                print(Fore.RED + "[!] No results found.")
+            query = input("Enter search query: ")
+            print(f"\n[+] Searching multiple languages for: {query}\n")
+            try:
+                last_results = regional_search_results(query)
+                display_search_results(last_results, title="Web Search Results (Regional + English)")
+            except Exception as e:
+                print(f"[!] Regional search failed: {e}\n")
+                last_results = []
+        
         elif choice == "2":
-            print(Fore.CYAN + "Exiting BHAROSINT. Goodbye!")
+            query = input("Enter social media query: ")
+            print(f"\n[+] Gathering multilingual social media content for: {query}\n")
+            try:
+                data = collect_social_data(query)
+                if data:
+                    last_results = data
+                    display_social_results(last_results, title="Social Media Intelligence Results")
+                else:
+                    print("[!] No social results found.")
+                    last_results = []
+            except Exception as e:
+                print(f"[!] Social media scrape failed: {e}\n")
+                last_results = []
+        elif choice == "3":
+            if 'last_results' not in locals() or not last_results:
+                print("[!] No results available to analyze. First run a search or social scrape.\n")
+                continue
+            print("[+] Running combined corpus-level NLP on last results...\n")
+            try:
+                analysis = analyze_corpus(last_results)
+                display_nlp_analysis(analysis)
+            except Exception as e:
+                print(f"[!] NLP Analysis failed: {e}\n")
+        elif choice == "4":
+            print("Exiting BHAROSINT. Goodbye!")
             break
         else:
-            print(Fore.RED + "Invalid choice, try again!")
+            print("Invalid choice, try again!")
 
 if __name__ == "__main__":
-    banner()
     main_menu()

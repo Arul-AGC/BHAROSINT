@@ -1,7 +1,21 @@
-venv/
+cat << 'EOF' > .gitignore
+# Python environments and cache
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+v_env/
+venv/
+ENV/
+env/
+
+# OSINT specific & Secrets (NEVER PUSH THESE)
+*.env
+.env
+config.json
+keys.txt
+*.log
+
+# OS generated files
 .DS_Store
-*.swp
+Thumbs.db
+EOF

@@ -1,8 +1,8 @@
-cat << 'EOF' > .gitignore
 # Python environments and cache
 __pycache__/
 *.py[cod]
 *$py.class
+.venv/
 v_env/
 venv/
 ENV/
@@ -18,4 +18,3 @@ keys.txt
 # OS generated files
 .DS_Store
 Thumbs.db
-EOF

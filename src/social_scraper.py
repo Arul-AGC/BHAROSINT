@@ -1,5 +1,5 @@
 # src/social_scraper.py
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 from src.translator import translate_snippet
 
 def scrape_twitter(query, limit=5):
@@ -9,7 +9,9 @@ def scrape_twitter(query, limit=5):
         with DDGS() as ddgs:
             search_results = ddgs.text(f"site:twitter.com {query}", max_results=limit)
             for item in search_results:
-                raw_text = item.get("title", "")
+                title = item.get("title", "")
+                body = item.get("body", "")
+                raw_text = f"{title} - {body}".strip(" -")
                 results.append({
                     "source": "Twitter",
                     "platform": "twitter",
@@ -30,7 +32,9 @@ def scrape_reddit(query, limit=5):
         with DDGS() as ddgs:
             search_results = ddgs.text(f"site:reddit.com {query}", max_results=limit)
             for item in search_results:
-                raw_text = item.get("title", "")
+                title = item.get("title", "")
+                body = item.get("body", "")
+                raw_text = f"{title} - {body}".strip(" -")
                 results.append({
                     "source": "Reddit",
                     "platform": "reddit",

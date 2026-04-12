@@ -55,6 +55,11 @@ class GraphCanvasWidget(Static):
     def render(self) -> Text:
         return self.text_content
         
+    def update_canvas(self, text_content: Text):
+        """Updates the text content and forces a UI repaint."""
+        self.text_content = text_content
+        self.refresh()
+        
     def get_content_width(self, container: Size, viewport: Size) -> int:
         return CANVAS_WIDTH
 
@@ -203,6 +208,12 @@ class ThreatMapApp(App):
             rich_text.append("\n")
 
         self.rendered_text = rich_text
+        
+        # 7. Push the finished graph content to the UI thread
+        try:
+            self.query_one(GraphCanvasWidget).update_canvas(rich_text)
+        except Exception:
+            pass
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)

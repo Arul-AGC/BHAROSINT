@@ -5,10 +5,15 @@ from collections import Counter, defaultdict
 
 try:
     import spacy
-    # Load the lightweight English model for advanced NER
-    nlp = spacy.load("en_core_web_sm")
+    # Load the English model for native English text and translations
+    nlp_en = spacy.load("en_core_web_sm")
+    # Load the Multilingual model for native Indian language text
+    try:
+        nlp_xx = spacy.load("xx_ent_wiki_sm")
+    except Exception:
+        nlp_xx = None
 except Exception:
-    raise RuntimeError("Spacy model missing. Run: python3 -m spacy download en_core_web_sm")
+    raise RuntimeError("Spacy models missing. Run: python3 -m spacy download en_core_web_sm && python3 -m spacy download xx_ent_wiki_sm")
 
 try:
     import nltk
@@ -75,22 +80,32 @@ def extract_iocs(corpus_text: str):
 
 def extract_entities_spacy(corpus_text: str):
     """Use Spacy's NLP pipeline for deterministic Named Entity Recognition."""
-    doc = nlp(corpus_text[:100000]) # Spacy has a 100k char limit by default
     entities = {"persons": set(), "organizations": set(), "locations": set(), "dates": set()}
     
-    for ent in doc.ents:
-        clean_ent = ent.text.strip().title()
-        if len(clean_ent) < 2 or clean_ent.lower() in EN_STOPWORDS:
-            continue
-            
-        if ent.label_ == "PERSON":
-            entities["persons"].add(clean_ent)
-        elif ent.label_ in ["ORG"]:
-            entities["organizations"].add(clean_ent)
-        elif ent.label_ in ["GPE", "LOC"]:
-            entities["locations"].add(clean_ent)
-        elif ent.label_ == "DATE":
-            entities["dates"].add(clean_ent)
+    docs = []
+    # Process text through English model (100k char limit)
+    if nlp_en:
+        docs.append(nlp_en(corpus_text[:100000]))
+    # Process text through Multilingual model
+    if nlp_xx:
+        docs.append(nlp_xx(corpus_text[:100000]))
+    
+    for doc in docs:
+        for ent in doc.ents:
+            clean_ent = ent.text.strip().title()
+            if len(clean_ent) < 2 or clean_ent.lower() in EN_STOPWORDS:
+                continue
+                
+            # Note: xx_ent_wiki_sm uses 'PER', English uses 'PERSON'
+            if ent.label_ in ["PERSON", "PER"]:
+                entities["persons"].add(clean_ent)
+            elif ent.label_ in ["ORG"]:
+                entities["organizations"].add(clean_ent)
+            # 'GPE' (Geopolitical Entity) vs 'LOC' (Location)
+            elif ent.label_ in ["GPE", "LOC"]:
+                entities["locations"].add(clean_ent)
+            elif ent.label_ == "DATE":
+                entities["dates"].add(clean_ent)
             
     return {k: sorted(list(v)) for k, v in entities.items()}
 
@@ -137,9 +152,20 @@ def summarize_textrank_math(corpus_text: str, num_sentences: int = 3):
             
     return " ".join(summary)
 
-# --- Kept the original sentiment & threat logic as they are fast and effective ---
-POS_LEXICON = {"good","safe","secure","recovered","success","peace","stable","positive","win","resolved","released"}
-NEG_LEXICON = {"attack","blast","bomb","explosion","dead","killed","injured","terror","panic","threat","breach","leak","detected","positive case","crash"}
+# --- Lexicon-based Sentiment & Threat Analysis ---
+POS_LEXICON = {
+    "good", "safe", "secure", "recovered", "success", "peace", "stable", 
+    "positive", "win", "resolved", "released", "protected", "thriving", 
+    "rescued", "neutralized", "prevented", "healthy", "growth", "boom", 
+    "praise", "applaud", "celebrate", "improved", "arrested", "captured", "patched"
+}
+NEG_LEXICON = {
+    "attack", "blast", "bomb", "explosion", "dead", "killed", "injured", 
+    "terror", "panic", "threat", "breach", "leak", "detected", "crash", 
+    "ransomware", "malware", "phishing", "hacked", "stolen", "vulnerability", 
+    "exploit", "critical", "compromised", "death", "murder", "casualty", 
+    "fraud", "scam", "corrupt", "violation", "outage", "stabbing", "shooting"
+}
 
 def sentiment_score(corpus_text: str):
     txt = clean_text(corpus_text).lower()
@@ -157,8 +183,19 @@ def sentiment_score(corpus_text: str):
     label = "Positive" if score > 0 else "Negative" if score < 0 else "Neutral"
     return {"label": label, "score": score, "positive_terms": sorted(set(pos_hits)), "negative_terms": sorted(set(neg_hits))}
 
-THREAT_KEYWORDS = {"bomb","blast","explosion","attack","terror","terrorist","IED","shooting","fire","breach","leak","cyberattack","malware"}
-STRONG_TERMS = {"killed","dead","injured","hostage","suicide","confirmed","suspect","arrested","terrorist"}
+THREAT_KEYWORDS = {
+    "bomb", "blast", "explosion", "attack", "terror", "terrorist", "IED", 
+    "shooting", "fire", "breach", "leak", "cyberattack", "malware", 
+    "ransomware", "phishing", "ddos", "botnet", "hijack", "trojan", 
+    "spyware", "keylogger", "vulnerability", "exploit", "zero-day", 
+    "payload", "darkweb", "cartel", "smuggling", "naxal", "militant", "insurgent"
+}
+STRONG_TERMS = {
+    "killed", "dead", "injured", "hostage", "suicide", "confirmed", 
+    "suspect", "arrested", "terrorist", "assassination", "slain", 
+    "kidnapped", "abducted", "casualties", "fatal", "massacre", 
+    "critical", "breached", "stolen", "extortion", "ransom"
+}
 
 def threat_score(corpus_text: str):
     txt = clean_text(corpus_text).lower()

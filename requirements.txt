@@ -1,4 +1,4 @@
-duckduckgo-search>=6.1.7
+ddgs>=9.13.0
 deep_translator>=1.11.4
 langdetect>=1.0.9
 spacy>=3.7.0

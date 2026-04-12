@@ -1,5 +1,5 @@
 # src/search.py
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 def _filter_by_language(items, lang_code):
     """Soft language filtering: keeps items that appear to match target language."""

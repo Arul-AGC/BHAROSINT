@@ -1,5 +1,5 @@
 # src/social_scraper.py
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from src.translator import translate_snippet
 
 def scrape_twitter(query, limit=5):

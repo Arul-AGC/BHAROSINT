@@ -152,71 +152,140 @@ def summarize_textrank_math(corpus_text: str, num_sentences: int = 3):
             
     return " ".join(summary)
 
-# --- Lexicon-based Sentiment & Threat Analysis ---
+# --- Negation-Aware Weighted Sentiment Analysis ---
+
+# Negation words: if any of these appear within 3 tokens before a
+# sentiment word, the polarity flips.  "not a threat" → positive context.
+NEGATORS = {"not", "no", "never", "neither", "nor", "none", "isn't",
+            "wasn't", "weren't", "won't", "don't", "doesn't", "didn't",
+            "can't", "cannot", "hardly", "barely", "without", "prevented",
+            "averted", "stopped", "failed"}
+
+# Weighted lexicons: not all words carry equal emotional weight.
+# Scale: 1 = mild, 2 = moderate, 3 = strong
 POS_LEXICON = {
-    "good", "safe", "secure", "recovered", "success", "peace", "stable", 
-    "positive", "win", "resolved", "released", "protected", "thriving", 
-    "rescued", "neutralized", "prevented", "healthy", "growth", "boom", 
-    "praise", "applaud", "celebrate", "improved", "arrested", "captured", "patched"
+    "good": 1, "safe": 1, "stable": 1, "positive": 1, "win": 1,
+    "secure": 2, "recovered": 2, "resolved": 2, "released": 1,
+    "protected": 2, "thriving": 2, "rescued": 3, "neutralized": 3,
+    "prevented": 2, "healthy": 1, "growth": 1, "boom": 1,
+    "praise": 1, "celebrate": 1, "improved": 1, "patched": 2,
+    "arrested": 2, "captured": 2, "success": 2, "peace": 2,
 }
+
 NEG_LEXICON = {
-    "attack", "blast", "bomb", "explosion", "dead", "killed", "injured", 
-    "terror", "panic", "threat", "breach", "leak", "detected", "crash", 
-    "ransomware", "malware", "phishing", "hacked", "stolen", "vulnerability", 
-    "exploit", "critical", "compromised", "death", "murder", "casualty", 
-    "fraud", "scam", "corrupt", "violation", "outage", "stabbing", "shooting"
+    "attack": 2, "blast": 3, "bomb": 3, "explosion": 3,
+    "dead": 3, "killed": 3, "injured": 2, "terror": 3,
+    "panic": 1, "threat": 1, "breach": 2, "leak": 1,
+    "detected": 1, "crash": 1, "ransomware": 2, "malware": 2,
+    "phishing": 1, "hacked": 2, "stolen": 2, "vulnerability": 1,
+    "exploit": 2, "critical": 1, "compromised": 2, "death": 3,
+    "murder": 3, "casualty": 3, "fraud": 2, "scam": 2,
+    "corrupt": 2, "violation": 2, "outage": 1, "stabbing": 3,
+    "shooting": 3, "massacre": 3,
 }
+
+def _has_negation(tokens, index, window=3):
+    """Check if any negation word appears within `window` tokens before index."""
+    start = max(0, index - window)
+    return any(tokens[j] in NEGATORS for j in range(start, index))
+
 
 def sentiment_score(corpus_text: str):
     txt = clean_text(corpus_text).lower()
     tokens = tokenize(txt)
     score = 0
     pos_hits, neg_hits = [], []
-    for t in tokens:
+
+    for i, t in enumerate(tokens):
+        negated = _has_negation(tokens, i)
+
         if t in POS_LEXICON:
-            score += 1
-            pos_hits.append(t)
+            weight = POS_LEXICON[t]
+            if negated:
+                score -= weight  # "not safe" → negative
+                neg_hits.append(t)
+            else:
+                score += weight
+                pos_hits.append(t)
+
         if t in NEG_LEXICON:
-            score -= 1
-            neg_hits.append(t)
-            
+            weight = NEG_LEXICON[t]
+            if negated:
+                score += weight  # "not a threat" → positive
+                pos_hits.append(t)
+            else:
+                score -= weight
+                neg_hits.append(t)
+
     label = "Positive" if score > 0 else "Negative" if score < 0 else "Neutral"
-    return {"label": label, "score": score, "positive_terms": sorted(set(pos_hits)), "negative_terms": sorted(set(neg_hits))}
+    return {
+        "label": label,
+        "score": score,
+        "positive_terms": sorted(set(pos_hits)),
+        "negative_terms": sorted(set(neg_hits)),
+    }
+
+
+# --- Normalized Threat Scoring ---
+# Scores are calculated per 1000 tokens to avoid inflating threat level
+# on long documents.  A 5000-word article about cybersecurity shouldn't
+# automatically score CRITICAL just because "attack" appears 50 times.
 
 THREAT_KEYWORDS = {
-    "bomb", "blast", "explosion", "attack", "terror", "terrorist", "IED", 
-    "shooting", "fire", "breach", "leak", "cyberattack", "malware", 
-    "ransomware", "phishing", "ddos", "botnet", "hijack", "trojan", 
-    "spyware", "keylogger", "vulnerability", "exploit", "zero-day", 
-    "payload", "darkweb", "cartel", "smuggling", "naxal", "militant", "insurgent"
+    "bomb": 5, "blast": 5, "explosion": 5, "attack": 3,
+    "terror": 5, "terrorist": 5, "IED": 5, "shooting": 4,
+    "fire": 1, "breach": 3, "leak": 2, "cyberattack": 4,
+    "malware": 3, "ransomware": 4, "phishing": 2, "ddos": 3,
+    "botnet": 3, "hijack": 4, "trojan": 3, "spyware": 3,
+    "keylogger": 3, "vulnerability": 2, "exploit": 3, "zero-day": 5,
+    "payload": 3, "darkweb": 3, "cartel": 4, "smuggling": 3,
+    "naxal": 4, "militant": 4, "insurgent": 4,
 }
 STRONG_TERMS = {
-    "killed", "dead", "injured", "hostage", "suicide", "confirmed", 
-    "suspect", "arrested", "terrorist", "assassination", "slain", 
-    "kidnapped", "abducted", "casualties", "fatal", "massacre", 
-    "critical", "breached", "stolen", "extortion", "ransom"
+    "killed": 5, "dead": 5, "injured": 3, "hostage": 5,
+    "suicide": 5, "confirmed": 1, "suspect": 1, "arrested": 1,
+    "terrorist": 5, "assassination": 5, "slain": 5,
+    "kidnapped": 5, "abducted": 5, "casualties": 4, "fatal": 4,
+    "massacre": 5, "critical": 2, "breached": 3, "stolen": 2,
+    "extortion": 4, "ransom": 4,
 }
 
 def threat_score(corpus_text: str):
     txt = clean_text(corpus_text).lower()
     tokens = tokenize(txt)
-    score = 0
+    raw_score = 0
     found = {"threat_terms": [], "strong_terms": []}
+
     for t in tokens:
         if t in THREAT_KEYWORDS:
-            score += 5
+            raw_score += THREAT_KEYWORDS[t]
             found["threat_terms"].append(t)
         if t in STRONG_TERMS:
-            score += 3
+            raw_score += STRONG_TERMS[t]
             found["strong_terms"].append(t)
-            
-    if score >= 20: level = "CRITICAL"
-    elif score >= 10: level = "HIGH"
-    elif score >= 4: level = "MEDIUM"
-    elif score > 0: level = "LOW"
-    else: level = "NONE"
-    
-    return {"score": score, "level": level, **{k: sorted(set(v)) for k, v in found.items()}}
+
+    # Normalize to score per 1000 tokens
+    token_count = max(len(tokens), 1)
+    normalized = round((raw_score / token_count) * 1000, 1)
+
+    if normalized >= 80:
+        level = "CRITICAL"
+    elif normalized >= 40:
+        level = "HIGH"
+    elif normalized >= 15:
+        level = "MEDIUM"
+    elif normalized > 0:
+        level = "LOW"
+    else:
+        level = "NONE"
+
+    return {
+        "score": raw_score,
+        "normalized_score": normalized,
+        "tokens_analyzed": token_count,
+        "level": level,
+        **{k: sorted(set(v)) for k, v in found.items()},
+    }
 
 def keywords_from_corpus(corpus_text: str, top_n: int = 20):
     tokens = tokenize(clean_text(corpus_text))

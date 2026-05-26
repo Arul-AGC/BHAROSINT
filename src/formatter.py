@@ -221,9 +221,10 @@ def display_nlp_analysis(analysis: Dict):
                 expand=True,
             ))
 
-        # ── 3. Sentiment + Threat side by side ──
+        # ── 3. Sentiment, Threat, Temporality ──
         sentiment = analysis.get("sentiment", {})
         threat = analysis.get("threat", {})
+        temporality = analysis.get("temporality", "Unknown")
 
         # Sentiment card
         sent_label = sentiment.get("label", "N/A")
@@ -231,8 +232,10 @@ def display_nlp_analysis(analysis: Dict):
         sent_color = "green" if sent_score > 0 else "red" if sent_score < 0 else "yellow"
         pos = ", ".join(sentiment.get("positive_terms", [])) or "none"
         neg = ", ".join(sentiment.get("negative_terms", [])) or "none"
+        sent_engine = sentiment.get("engine", "Lexicon (Fallback)")
 
         sent_text = Text()
+        sent_text.append(f"Engine:   {sent_engine}\n", style="dim")
         sent_text.append("Verdict:  ", style="bold")
         sent_text.append(f"{sent_label} ({sent_score:+d})\n", style=f"bold {sent_color}")
         sent_text.append("⊕ ", style="green")
@@ -249,19 +252,17 @@ def display_nlp_analysis(analysis: Dict):
         )
 
         # Threat card
-        threat_level = threat.get("level", "NONE")
-        threat_score_val = threat.get("score", 0)
-        t_color = "bold red" if threat_level == "CRITICAL" else "yellow" if threat_level in ("HIGH", "MEDIUM") else "green"
-        t_terms = ", ".join(threat.get("threat_terms", [])) or "none"
-        s_terms = ", ".join(threat.get("strong_terms", [])) or "none"
+        threat_score_val = threat.get("normalized_score", 0)
+        threat_lvl = threat.get("level", "NONE")
+        threat_color = "red" if threat_lvl in ("CRITICAL", "HIGH") else "yellow" if threat_lvl == "MEDIUM" else "green"
+        tt = ", ".join(threat.get("threat_terms", [])) or "none"
+        st = ", ".join(threat.get("strong_terms", [])) or "none"
 
         thr_text = Text()
         thr_text.append("Level:    ", style="bold")
-        thr_text.append(f"{threat_level} (Score: {threat_score_val})\n", style=t_color)
-        thr_text.append("Threats:  ", style="dim")
-        thr_text.append(f"{_trunc(t_terms, 60)}\n", style="dim red")
-        thr_text.append("Strong:   ", style="dim")
-        thr_text.append(f"{_trunc(s_terms, 60)}", style="dim red")
+        thr_text.append(f"{threat_lvl} (Score: {threat_score_val})\n", style=f"bold {threat_color}")
+        thr_text.append(f"Threats:  {_trunc(tt, 60)}\n", style="dim red")
+        thr_text.append(f"Strong:   {_trunc(st, 60)}", style="bold red")
 
         thr_panel = Panel(
             thr_text,

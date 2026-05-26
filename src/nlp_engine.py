@@ -190,7 +190,47 @@ def _has_negation(tokens, index, window=3):
     return any(tokens[j] in NEGATORS for j in range(start, index))
 
 
-def sentiment_score(corpus_text: str):
+# --- ML-Based Sentiment Analysis ---
+
+try:
+    from transformers import pipeline
+    import warnings
+    warnings.filterwarnings("ignore")
+    # Load a lightweight, fast sentiment model (CPU)
+    ml_sentiment = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english", device=-1)
+except Exception:
+    ml_sentiment = None
+
+def sentiment_score(corpus_text: str, summary_text: str = ""):
+    """
+    Analyzes sentiment using a pre-trained ML model if available.
+    Falls back to lexicon-based scoring if the model fails or is missing.
+    We run ML sentiment on the summary to avoid token limits (512 max).
+    """
+    text_to_analyze = summary_text if summary_text else corpus_text
+    
+    if ml_sentiment and text_to_analyze:
+        try:
+            # Truncate to safe length for ML model
+            safe_text = text_to_analyze[:1500] 
+            result = ml_sentiment(safe_text)[0]
+            label = result['label'].title()  # Positive / Negative
+            # Confidence score [0, 1] mapped to [-100, 100]
+            score = int((result['score'] - 0.5) * 200) 
+            if label == "Negative":
+                score = -score
+                
+            return {
+                "label": label,
+                "score": score,
+                "positive_terms": ["(ML Pipeline Active)"],
+                "negative_terms": [],
+                "engine": "Machine Learning (DistilBERT)"
+            }
+        except Exception:
+            pass # Fall back to lexicon
+            
+    # Lexicon fallback (original logic)
     txt = clean_text(corpus_text).lower()
     tokens = tokenize(txt)
     score = 0
@@ -202,7 +242,7 @@ def sentiment_score(corpus_text: str):
         if t in POS_LEXICON:
             weight = POS_LEXICON[t]
             if negated:
-                score -= weight  # "not safe" → negative
+                score -= weight
                 neg_hits.append(t)
             else:
                 score += weight
@@ -211,7 +251,7 @@ def sentiment_score(corpus_text: str):
         if t in NEG_LEXICON:
             weight = NEG_LEXICON[t]
             if negated:
-                score += weight  # "not a threat" → positive
+                score += weight
                 pos_hits.append(t)
             else:
                 score -= weight
@@ -223,7 +263,39 @@ def sentiment_score(corpus_text: str):
         "score": score,
         "positive_terms": sorted(set(pos_hits)),
         "negative_terms": sorted(set(neg_hits)),
+        "engine": "Lexicon (Fallback)"
     }
+
+
+# --- Temporal Threat Analysis ---
+
+import datetime
+
+def analyze_temporality(dates: list, corpus_text: str):
+    """
+    Analyzes extracted dates and text for temporal context.
+    Determines if the threat/intel is Historical or Active.
+    """
+    current_year = datetime.datetime.now().year
+    years_found = []
+    
+    # Extract years (2000-2029) from corpus directly to catch anything NER missed
+    years_in_text = re.findall(r"\b(20[0-2][0-9])\b", corpus_text)
+    years_found.extend([int(y) for y in years_in_text])
+    
+    for d in dates:
+        years = re.findall(r"\b(20[0-2][0-9])\b", d)
+        years_found.extend([int(y) for y in years])
+        
+    if not years_found:
+        return "Unknown (No dates extracted)"
+        
+    most_recent = max(years_found)
+    
+    if most_recent < current_year - 1:
+        return f"Historical (Most recent: {most_recent})"
+    else:
+        return f"Active / Recent (Mentions {most_recent})"
 
 
 # --- Normalized Threat Scoring ---
@@ -319,8 +391,9 @@ def analyze_corpus(items, text_fields=None):
 
     # 3. Core NLP Metrics
     kw = keywords_from_corpus(corpus_clean, top_n=25)
-    sent = sentiment_score(corpus_clean)
+    sent = sentiment_score(corpus_clean, summary_text=summary)
     threat = threat_score(corpus_clean)
+    temporality = analyze_temporality(ents.get("dates", []), corpus_clean)
 
     total_tokens = len(tokenize(corpus_clean))
     unique_terms = len(set(tokenize(corpus_clean)))
@@ -331,5 +404,6 @@ def analyze_corpus(items, text_fields=None):
         "entities": ents,
         "sentiment": sent,
         "threat": threat,
+        "temporality": temporality,
         "stats": {"total_tokens": total_tokens, "unique_terms": unique_terms, "items_analyzed": len(items)}
     }

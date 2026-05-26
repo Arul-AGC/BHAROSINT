@@ -23,6 +23,7 @@ from src.exporter import export_results
 from src.sources.shodan_source import search_shodan
 from src.sources.virustotal_source import search_virustotal
 from src.sources.pastebin_source import search_paste_sites
+from src.sources.telegram_source import search_telegram
 
 # --------------------------------------------------
 # ASCII Banner — keep the brand identity
@@ -59,7 +60,7 @@ def run_social(query: str) -> list:
 
 def run_recon(query: str) -> list:
     """Execute deep infrastructure and leak recon. Returns list of result dicts."""
-    print(f"\n[+] Running infrastructure & leak recon for: {query}\n")
+    print(f"\n[+] Running infrastructure, leak, & telegram recon for: {query}\n")
     results = []
     
     paste_data = search_paste_sites(query)
@@ -70,10 +71,13 @@ def run_recon(query: str) -> list:
     if shodan_data:
         results.extend(shodan_data)
         
-    # We query the keyword as a domain as a starting point
     vt_data = search_virustotal(query, search_type="domain")
     if vt_data:
         results.extend(vt_data)
+        
+    telegram_data = search_telegram(query)
+    if telegram_data:
+        results.extend(telegram_data)
         
     return results
 

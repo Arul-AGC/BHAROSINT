@@ -29,6 +29,9 @@ _DEFAULTS = {
     "api_keys": {
         "shodan": "",
         "virustotal": "",
+        "telegram_api_id": "",
+        "telegram_api_hash": "",
+        "telegram_session": "bharosint_session"
     },
     "export": {
         "default_format": "html",

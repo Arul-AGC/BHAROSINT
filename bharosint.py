@@ -20,6 +20,10 @@ from src.formatter import display_search_results, display_social_results, displa
 from src.graph_engine_tui import display_interactive_map
 from src.exporter import export_results
 
+from src.sources.shodan_source import search_shodan
+from src.sources.virustotal_source import search_virustotal
+from src.sources.pastebin_source import search_paste_sites
+
 # --------------------------------------------------
 # ASCII Banner — keep the brand identity
 # --------------------------------------------------
@@ -53,6 +57,27 @@ def run_social(query: str) -> list:
     return data if data else []
 
 
+def run_recon(query: str) -> list:
+    """Execute deep infrastructure and leak recon. Returns list of result dicts."""
+    print(f"\n[+] Running infrastructure & leak recon for: {query}\n")
+    results = []
+    
+    paste_data = search_paste_sites(query)
+    if paste_data:
+        results.extend(paste_data)
+        
+    shodan_data = search_shodan(query)
+    if shodan_data:
+        results.extend(shodan_data)
+        
+    # We query the keyword as a domain as a starting point
+    vt_data = search_virustotal(query, search_type="domain")
+    if vt_data:
+        results.extend(vt_data)
+        
+    return results
+
+
 def run_analysis(results: list) -> dict:
     """Run NLP analysis on a result set. Returns analysis dict."""
     print("[+] Running combined corpus-level NLP on results...\n")
@@ -67,7 +92,6 @@ def handle_export(results: list, analysis, query: str, fmt: str, output_dir: str
         print(f"\n[✓] Exported {fmt.upper()} report → {filepath}")
     except Exception as e:
         print(f"\n[!] Export failed: {e}")
-
 
 # --------------------------------------------------
 # CLI Mode (argparse)
@@ -104,7 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-m", "--mode",
         type=str,
-        choices=["search", "social", "analyze", "map", "all"],
+        choices=["search", "social", "recon", "analyze", "map", "all"],
         default="search",
         help="Operation mode (default: search)"
     )
@@ -152,6 +176,14 @@ def cli_mode(args):
                 results.extend(social_data)
             else:
                 results = social_data
+
+        if mode in ("recon", "all"):
+            recon_data = run_recon(query)
+            display_social_results(recon_data, title="Deep Infrastructure & Leak Recon")
+            if mode == "all":
+                results.extend(recon_data)
+            else:
+                results = recon_data
 
         if mode in ("analyze", "all"):
             if not results:
@@ -209,10 +241,11 @@ def main_menu():
 [ MAIN MENU ]
 1. Web Search (Regional + English)
 2. Social Media Intelligence (Multilingual)
-3. Run Combined NLP on last results (corpus-level)
-4. View Threat Map (Terminal Interactive Graph)
-5. Export last results (JSON / CSV / HTML)
-6. Exit
+3. Deep Infrastructure & Leak Recon (Shodan/VT/Paste)
+4. Run Combined NLP on last results (corpus-level)
+5. View Threat Map (Terminal Interactive Graph)
+6. Export last results (JSON / CSV / HTML)
+7. Exit
 """)
         choice = input("Enter your choice: ").strip()
 
@@ -250,6 +283,25 @@ def main_menu():
                 last_results = []
 
         elif choice == "3":
+            query = input("Enter recon target (domain, IP, keyword): ").strip()
+            if not query:
+                print("[!] Empty query. Try again.\n")
+                continue
+            last_query = query
+            last_analysis = None
+            try:
+                data = run_recon(query)
+                if data:
+                    last_results = data
+                    display_social_results(last_results, title="Deep Infrastructure & Leak Recon")
+                else:
+                    print("[!] No recon results found.")
+                    last_results = []
+            except Exception as e:
+                print(f"[!] Recon failed: {e}\n")
+                last_results = []
+
+        elif choice == "4":
             if not last_results:
                 print("[!] No results available to analyze. First run a search or social scrape.\n")
                 continue
@@ -259,7 +311,7 @@ def main_menu():
             except Exception as e:
                 print(f"[!] NLP Analysis failed: {e}\n")
 
-        elif choice == "4":
+        elif choice == "5":
             if not last_results:
                 print("[!] No results available to map. First run a search or social scrape.\n")
                 continue
@@ -270,7 +322,7 @@ def main_menu():
             except Exception as e:
                 print(f"[!] Threat Map rendering failed: {e}\n")
 
-        elif choice == "5":
+        elif choice == "6":
             if not last_results:
                 print("[!] No results available to export. First run a search or social scrape.\n")
                 continue
@@ -299,7 +351,7 @@ def main_menu():
 
             handle_export(last_results, last_analysis, last_query, fmt, output_dir)
 
-        elif choice == "6":
+        elif choice == "7":
             print("Exiting BHAROSINT. Goodbye!")
             break
 

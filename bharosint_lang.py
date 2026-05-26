@@ -1,29 +1,47 @@
 # bharosint_lang.py
+"""
+Multilingual search orchestrator.
 
+Translates query into each configured language, searches DDG for each,
+deduplicates by URL, and respects rate-limit spacing between requests.
+"""
+
+import time
 from src.translator import translate_query
 from src.search import duckduckgo_search
+from src.config import CFG
+from src.logger import get_logger
 
-LANGUAGES = {
+log = get_logger("lang")
+
+LANGUAGES = CFG.get("languages", {
     "English": "en",
     "Hindi": "hi",
     "Tamil": "ta",
     "Telugu": "te",
     "Malayalam": "ml",
-    "Bengali": "bn"
-}
+    "Bengali": "bn",
+})
+
 
 def regional_search(query):
     """Perform multilingual search and print results to console."""
-    print(f"\n[+] Searching multiple languages for: {query}\n")
+    log.info("Starting multilingual search for: %s", query[:60])
     all_results = []
+    delay = CFG["search"]["request_delay"]
+    limit = CFG["search"]["results_per_lang"]
+
     try:
         for lang_name, lang_code in LANGUAGES.items():
             translated = translate_query(query, lang_code)
-            print(f"[>] {lang_name:9} ({lang_code}) → {translated}")
-            results = duckduckgo_search(translated, limit=8, lang=lang_code)
+            log.info("[%s] (%s) → %s", lang_name, lang_code, translated[:60])
+            results = duckduckgo_search(translated, limit=limit, lang=lang_code)
             for r in results:
                 r["lang"] = lang_name
                 all_results.append(r)
+
+            # Rate-limit spacing between language queries
+            time.sleep(delay)
 
         seen = set()
         unique = []
@@ -33,7 +51,7 @@ def regional_search(query):
                 seen.add(link)
                 unique.append(r)
 
-        print(f"\n[+] Found {len(unique)} multilingual search results:\n")
+        log.info("Multilingual search complete: %d unique results", len(unique))
         for i, r in enumerate(unique, 1):
             print(f"{i}. [{r['lang']}]")
             print(f"   Title   : {r.get('title','')}")
@@ -41,22 +59,32 @@ def regional_search(query):
             print(f"   URL     : {r.get('link','')}\n")
 
     except Exception as e:
-        print(f"[!] Regional search failed: {e}\n")
+        log.error("Regional search failed: %s", e)
+
 
 def regional_search_results(query):
     """Return a list of result dicts for NLP processing."""
     all_results = []
+    delay = CFG["search"]["request_delay"]
+    limit = CFG["search"]["results_per_lang"]
+
     for lang_name, lang_code in LANGUAGES.items():
         try:
             translated = translate_query(query, lang_code)
-            results = duckduckgo_search(translated, limit=8, lang=lang_code)
+            log.info("[%s] (%s) → %s", lang_name, lang_code, translated[:60])
+            results = duckduckgo_search(translated, limit=limit, lang=lang_code)
             for r in results:
                 r["lang"] = lang_name
                 r.setdefault("title", "")
                 r.setdefault("snippet", "")
                 r.setdefault("link", "")
                 all_results.append(r)
-        except Exception:
+
+            # Rate-limit spacing
+            time.sleep(delay)
+
+        except Exception as e:
+            log.warning("Search for %s failed: %s — skipping", lang_name, e)
             continue
 
     seen = set()

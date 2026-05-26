@@ -1,0 +1,41 @@
+# BHAROSINT Configuration
+# Copy this to config.yaml and fill in your API keys.
+
+# ─── Search Settings ──────────────────────────────────────────────
+search:
+  # Delay between successive DuckDuckGo queries (seconds).
+  # Lower = faster but higher chance of rate-limiting.
+  request_delay: 0.8
+  # Max retries per query before giving up.
+  max_retries: 3
+  # Results per language per search.
+  results_per_lang: 8
+
+# ─── Languages ────────────────────────────────────────────────────
+languages:
+  English: en
+  Hindi: hi
+  Tamil: ta
+  Telugu: te
+  Malayalam: ml
+  Bengali: bn
+
+# ─── External API Keys (optional — tool works without them) ──────
+# Get free keys:
+#   Shodan:      https://account.shodan.io/register
+#   VirusTotal:  https://www.virustotal.com/gui/join-us
+api_keys:
+  shodan: ""
+  virustotal: ""
+
+# ─── Export Settings ──────────────────────────────────────────────
+export:
+  default_format: html
+  default_directory: reports
+
+# ─── Logging ──────────────────────────────────────────────────────
+logging:
+  # Level: DEBUG, INFO, WARNING, ERROR
+  level: INFO
+  # Log to file in addition to console? Set path or leave empty.
+  file: ""

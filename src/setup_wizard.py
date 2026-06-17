@@ -1,0 +1,375 @@
+# src/setup_wizard.py
+"""
+BHAROSINT First-Run Setup Wizard.
+
+Runs automatically when config.yaml is missing any API keys.
+Can also be triggered manually via: python bharosint.py --setup
+"""
+
+import os
+import yaml
+
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.yaml")
+
+# ─── Rich TUI (with fallback to plain input) ─────────────────────────────────
+
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.prompt import Prompt, Confirm
+    from rich.text import Text
+    from rich.table import Table
+    from rich import box
+    _RICH = True
+    console = Console()
+except ImportError:
+    _RICH = False
+
+
+def _print_header():
+    if _RICH:
+        console.print(Panel.fit(
+            "[bold cyan]BHAROSINT[/] [bold white]— First-Run Setup Wizard[/]\n"
+            "[dim]This wizard will configure your API keys and settings.[/]\n"
+            "[dim]Press [bold]Enter[/] to skip any optional key.[/]",
+            border_style="cyan",
+            padding=(1, 4),
+        ))
+    else:
+        print("\n" + "="*60)
+        print("  BHAROSINT — First-Run Setup Wizard")
+        print("  Press Enter to skip any optional key.")
+        print("="*60 + "\n")
+
+
+def _section(title: str):
+    if _RICH:
+        console.print(f"\n[bold yellow]━━━ {title} ━━━[/]")
+    else:
+        print(f"\n--- {title} ---")
+
+
+def _ask(prompt: str, default: str = "", password: bool = False, optional: bool = True) -> str:
+    """Ask a question and return the trimmed response."""
+    suffix = " [dim](optional, Enter to skip)[/]" if optional and _RICH else " (optional, Enter to skip)" if optional else ""
+    if _RICH:
+        if password:
+            val = Prompt.ask(f"[green]?[/] {prompt}{suffix}", password=True, default=default)
+        else:
+            val = Prompt.ask(f"[green]?[/] {prompt}{suffix}", default=default)
+    else:
+        display = f"  {prompt}{suffix}: "
+        val = input(display).strip() or default
+    return val.strip()
+
+
+def _confirm(prompt: str, default: bool = True) -> bool:
+    if _RICH:
+        return Confirm.ask(f"[green]?[/] {prompt}", default=default)
+    else:
+        ans = input(f"  {prompt} [Y/n]: ").strip().lower()
+        if not ans:
+            return default
+        return ans in ("y", "yes")
+
+
+def _ok(msg: str):
+    if _RICH:
+        console.print(f"  [bold green]✓[/] {msg}")
+    else:
+        print(f"  [OK] {msg}")
+
+
+def _warn(msg: str):
+    if _RICH:
+        console.print(f"  [bold yellow]⚠[/]  {msg}")
+    else:
+        print(f"  [!] {msg}")
+
+
+def _show_key_table(cfg: dict):
+    """Display a summary table of configured keys."""
+    if not _RICH:
+        return
+    
+    api = cfg.get("api_keys", {})
+    table = Table(box=box.ROUNDED, border_style="cyan", show_header=True, header_style="bold cyan")
+    table.add_column("Service", style="white", min_width=20)
+    table.add_column("Status", min_width=20)
+    table.add_column("Where to get it", style="dim", min_width=40)
+
+    def _status(val):
+        return "[bold green]✓ Configured[/]" if val else "[dim]✗ Not set (optional)[/]"
+
+    table.add_row("Shodan", _status(api.get("shodan")), "account.shodan.io/register")
+    table.add_row("VirusTotal", _status(api.get("virustotal")), "virustotal.com/gui/join-us")
+    table.add_row("Telegram API ID", _status(api.get("telegram_api_id")), "my.telegram.org → API dev tools")
+    table.add_row("Telegram API Hash", _status(api.get("telegram_api_hash")), "my.telegram.org → API dev tools")
+
+    console.print("\n", table, "\n")
+
+
+def load_existing_config() -> dict:
+    """Load existing config.yaml, or return empty dict if missing."""
+    if not os.path.exists(CONFIG_PATH):
+        return {}
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+
+def save_config(cfg: dict):
+    """Write the updated config back to config.yaml, preserving comments structure."""
+    # We rebuild the file so we keep the correct YAML structure and comments.
+    shodan_key    = cfg.get("api_keys", {}).get("shodan", "")
+    vt_key        = cfg.get("api_keys", {}).get("virustotal", "")
+    tg_id         = cfg.get("api_keys", {}).get("telegram_api_id", "")
+    tg_hash       = cfg.get("api_keys", {}).get("telegram_api_hash", "")
+    tg_session    = cfg.get("api_keys", {}).get("telegram_session", "bharosint_session")
+
+    search        = cfg.get("search", {})
+    req_delay     = search.get("request_delay", 0.8)
+    max_retries   = search.get("max_retries", 3)
+    results_p_l   = search.get("results_per_lang", 8)
+
+    log           = cfg.get("logging", {})
+    log_level     = log.get("level", "INFO")
+    log_file      = log.get("file", "")
+
+    export        = cfg.get("export", {})
+    exp_fmt       = export.get("default_format", "html")
+    exp_dir       = export.get("default_directory", "reports")
+
+    content = f"""# BHAROSINT Configuration
+# Generated by setup wizard. Edit manually at any time.
+
+# ─── Search Settings ──────────────────────────────────────────────
+search:
+  # Delay between successive DuckDuckGo queries (seconds).
+  # Lower = faster but higher chance of rate-limiting.
+  request_delay: {req_delay}
+  # Max retries per query before giving up.
+  max_retries: {max_retries}
+  # Results per language per search.
+  results_per_lang: {results_p_l}
+
+# ─── Languages ────────────────────────────────────────────────────
+languages:
+  English: en
+  Hindi: hi
+  Tamil: ta
+  Telugu: te
+  Malayalam: ml
+  Bengali: bn
+
+# ─── External API Keys ────────────────────────────────────────────
+# Get free keys:
+#   Shodan:      https://account.shodan.io/register
+#   VirusTotal:  https://www.virustotal.com/gui/join-us
+#   Telegram:    https://my.telegram.org (API development tools)
+api_keys:
+  shodan: "{shodan_key}"
+  virustotal: "{vt_key}"
+  telegram_api_id: "{tg_id}"
+  telegram_api_hash: "{tg_hash}"
+  telegram_session: "{tg_session}"
+
+# ─── Export Settings ──────────────────────────────────────────────
+export:
+  default_format: {exp_fmt}
+  default_directory: {exp_dir}
+
+# ─── Logging ──────────────────────────────────────────────────────
+logging:
+  # Level: DEBUG, INFO, WARNING, ERROR
+  level: {log_level}
+  # Log to file in addition to console? Set path or leave empty.
+  file: "{log_file}"
+"""
+    with open(CONFIG_PATH, "w") as f:
+        f.write(content)
+
+
+def needs_setup(cfg: dict) -> bool:
+    """
+    Returns True if any API key is unconfigured.
+    Used to decide whether to auto-trigger the wizard.
+    """
+    api = cfg.get("api_keys", {})
+    return not any([
+        api.get("shodan"),
+        api.get("virustotal"),
+        api.get("telegram_api_id"),
+    ])
+
+
+def run_wizard(force: bool = False):
+    """
+    Main wizard entry point.
+    
+    Args:
+        force: If True, always run even if keys are already set.
+    """
+    cfg = load_existing_config()
+
+    if not force and not needs_setup(cfg):
+        return  # Config is already populated — skip the wizard
+
+    _print_header()
+
+    # ── Section 1: Shodan ──────────────────────────────────────────
+    _section("1. Shodan  (Infrastructure Recon)")
+    if _RICH:
+        console.print("  [dim]Maps exposed servers, open ports, and banners for target IPs/domains.[/]")
+        console.print("  [dim]Free key: [link]https://account.shodan.io/register[/link][/]")
+    else:
+        print("  Maps exposed servers, open ports, banners.")
+        print("  Free key: https://account.shodan.io/register")
+
+    existing_shodan = cfg.get("api_keys", {}).get("shodan", "")
+    if existing_shodan:
+        _ok(f"Already configured (ends in ...{existing_shodan[-4:]})")
+        if not _confirm("Replace with a new key?", default=False):
+            shodan_key = existing_shodan
+        else:
+            shodan_key = _ask("Shodan API Key", password=True)
+    else:
+        shodan_key = _ask("Shodan API Key", password=True)
+
+    if shodan_key:
+        _ok("Shodan key saved.")
+    else:
+        _warn("Shodan key skipped — infrastructure recon will be disabled.")
+
+    # ── Section 2: VirusTotal ──────────────────────────────────────
+    _section("2. VirusTotal  (Threat Intelligence)")
+    if _RICH:
+        console.print("  [dim]Checks domains, IPs, and hashes against 70+ security vendors.[/]")
+        console.print("  [dim]Free key: [link]https://www.virustotal.com/gui/join-us[/link][/]")
+    else:
+        print("  Checks domains/IPs/hashes against 70+ security vendors.")
+        print("  Free key: https://www.virustotal.com/gui/join-us")
+
+    existing_vt = cfg.get("api_keys", {}).get("virustotal", "")
+    if existing_vt:
+        _ok(f"Already configured (ends in ...{existing_vt[-4:]})")
+        if not _confirm("Replace with a new key?", default=False):
+            vt_key = existing_vt
+        else:
+            vt_key = _ask("VirusTotal API Key", password=True)
+    else:
+        vt_key = _ask("VirusTotal API Key", password=True)
+
+    if vt_key:
+        _ok("VirusTotal key saved.")
+    else:
+        _warn("VirusTotal key skipped — domain/hash intel will be disabled.")
+
+    # ── Section 3: Telegram ───────────────────────────────────────
+    _section("3. Telegram  (Dark Intel & Threat Actor Channels)")
+    if _RICH:
+        console.print("  [dim]Scrapes public Telegram channels where threat actors communicate.[/]")
+        console.print("  [dim]Get credentials: [link]https://my.telegram.org[/link] → API development tools[/]")
+    else:
+        print("  Scrapes public Telegram channels for threat actor chatter.")
+        print("  Get credentials at: https://my.telegram.org → API development tools")
+
+    existing_tg_id = cfg.get("api_keys", {}).get("telegram_api_id", "")
+    existing_tg_hash = cfg.get("api_keys", {}).get("telegram_api_hash", "")
+
+    if existing_tg_id and existing_tg_hash:
+        _ok(f"Telegram already configured (ID ends in ...{str(existing_tg_id)[-4:]})")
+        if not _confirm("Replace Telegram credentials?", default=False):
+            tg_id = existing_tg_id
+            tg_hash = existing_tg_hash
+        else:
+            tg_id = _ask("Telegram API ID")
+            tg_hash = _ask("Telegram API Hash", password=True)
+    else:
+        tg_id = _ask("Telegram API ID")
+        tg_hash = _ask("Telegram API Hash", password=True)
+
+    if tg_id and tg_hash:
+        _ok("Telegram credentials saved.")
+        if _RICH:
+            console.print(
+                "  [bold yellow]Note:[/] You must authenticate once manually. Run:\n"
+                "  [bold cyan]  python bharosint.py --telegram-auth[/]\n"
+                "  This sends a code to your phone and saves a session file."
+            )
+        else:
+            print("  Note: Run 'python bharosint.py --telegram-auth' once to log in.")
+    else:
+        _warn("Telegram credentials skipped — Telegram recon will be disabled.")
+
+    # ── Section 4: Optional Tuning ────────────────────────────────
+    _section("4. Search Tuning  (Optional)")
+    if _RICH:
+        console.print("  [dim]Controls rate limiting and search depth. Defaults are safe.[/]")
+    
+    tune = _confirm("Customize search speed settings?", default=False)
+    if tune:
+        try:
+            delay_str = _ask("Request delay between queries in seconds", default="0.8", optional=False)
+            req_delay = float(delay_str)
+        except ValueError:
+            req_delay = 0.8
+            _warn("Invalid value, using default 0.8s")
+
+        try:
+            results_str = _ask("Results per language per search", default="8", optional=False)
+            results_per_lang = int(results_str)
+        except ValueError:
+            results_per_lang = 8
+            _warn("Invalid value, using default 8")
+    else:
+        req_delay = cfg.get("search", {}).get("request_delay", 0.8)
+        results_per_lang = cfg.get("search", {}).get("results_per_lang", 8)
+
+    # ── Section 5: Logging ────────────────────────────────────────
+    _section("5. Logging  (Optional)")
+    log_to_file = _confirm("Save logs to a file?", default=False)
+    if log_to_file:
+        log_file = _ask("Log file path", default="bharosint.log", optional=False)
+    else:
+        log_file = cfg.get("logging", {}).get("file", "")
+
+    # ── Build final config and save ───────────────────────────────
+    updated_cfg = {
+        "search": {
+            "request_delay": req_delay,
+            "max_retries": cfg.get("search", {}).get("max_retries", 3),
+            "results_per_lang": results_per_lang,
+        },
+        "api_keys": {
+            "shodan": shodan_key,
+            "virustotal": vt_key,
+            "telegram_api_id": tg_id,
+            "telegram_api_hash": tg_hash,
+            "telegram_session": cfg.get("api_keys", {}).get("telegram_session", "bharosint_session"),
+        },
+        "logging": {
+            "level": cfg.get("logging", {}).get("level", "INFO"),
+            "file": log_file,
+        },
+        "export": cfg.get("export", {"default_format": "html", "default_directory": "reports"}),
+    }
+
+    save_config(updated_cfg)
+
+    # ── Final summary ─────────────────────────────────────────────
+    if _RICH:
+        console.print()
+        console.print(Panel(
+            "[bold green]Setup complete![/] Configuration saved to [bold]config.yaml[/]\n\n"
+            "You can re-run this wizard at any time with:\n"
+            "[bold cyan]  python bharosint.py --setup[/]",
+            border_style="green",
+            padding=(1, 4),
+        ))
+        _show_key_table(updated_cfg)
+    else:
+        print("\n[✓] Setup complete! Configuration saved to config.yaml")
+        print("    Re-run anytime with: python bharosint.py --setup\n")

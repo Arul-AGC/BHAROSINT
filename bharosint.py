@@ -13,6 +13,8 @@ Usage:
 import argparse
 import sys
 
+from src.setup_wizard import run_wizard, needs_setup, load_existing_config
+
 from bharosint_lang import regional_search, regional_search_results
 from src.social_scraper import collect_social_data
 from src.nlp_engine import analyze_corpus
@@ -148,6 +150,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default="reports",
         help="Output directory for exports (default: reports/)"
+    )
+    parser.add_argument(
+        "--setup",
+        action="store_true",
+        default=False,
+        help="Run the interactive setup wizard to configure API keys"
     )
 
     return parser
@@ -378,6 +386,17 @@ def main():
     When you run 'python bharosint.py --query xyz', sys.argv has more items.
     """
     parser = build_parser()
+
+    # --setup flag: always run wizard regardless of existing config
+    if "--setup" in sys.argv:
+        args = parser.parse_args()
+        run_wizard(force=True)
+        return
+
+    # First-run check: auto-trigger wizard if no API keys are configured
+    existing_cfg = load_existing_config()
+    if needs_setup(existing_cfg):
+        run_wizard(force=False)
 
     # If no CLI arguments supplied, launch interactive menu
     if len(sys.argv) == 1:
